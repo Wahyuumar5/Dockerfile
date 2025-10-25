@@ -1,48 +1,27 @@
-# ===============================
-# BASE IMAGE
-# ===============================
 FROM ubuntu:22.04
 
-# ===============================
-# ENVIRONMENT SETUP
-# ===============================
-ENV DEBIAN_FRONTEND=noninteractive
-ENV USER=root
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    xfce4 xfce4-goodies xorg dbus-x11 x11-xserver-utils \
+    novnc websockify python3-pip supervisor wget curl net-tools \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Buat folder kerja
 WORKDIR /root
 
-# ===============================
-# INSTALL DESKTOP, VNC & TOOLS
-# ===============================
-RUN apt update && apt install -y \
-    xfce4 xfce4-goodies \
-    x11vnc xvfb \
-    novnc websockify \
-    python3 python3-pip \
-    wget curl nano git \
-    && apt clean && rm -rf /var/lib/apt/lists/*
+# Download dan setup noVNC
+RUN mkdir -p /opt/novnc/utils/websockify && \
+    ln -s /opt/novnc/vnc.html /opt/novnc/index.html
 
-# ===============================
-# SETUP PASSWORD UNTUK VNC
-# ===============================
-RUN mkdir ~/.vnc && \
-    x11vnc -storepasswd 123456 ~/.vnc/passwd
+# Expose port (gunakan port Clever Cloud)
+ENV PORT=8080
+EXPOSE 8080
 
-# ===============================
-# STARTUP SCRIPT
-# ===============================
-RUN echo '#!/bin/bash\n\
-Xvfb :0 -screen 0 1024x768x16 &\n\
-export DISPLAY=:0\n\
-startxfce4 &\n\
-websockify --web=/usr/share/novnc/ --cert=/etc/ssl/certs/ssl-cert-snakeoil.pem --key=/etc/ssl/private/ssl-cert-snakeoil.key 6080 localhost:5900 &' > /root/startup.sh && \
-chmod +x /root/startup.sh
+# File supervisor config
+RUN echo '[program:x11]' > /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=/usr/bin/startxfce4' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '[program:novnc]' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=/usr/bin/websockify --web=/usr/share/novnc/ ${PORT} localhost:5901' >> /etc/supervisor/conf.d/supervisord.conf
 
-# ===============================
-# EXPOSE PORT
-# ===============================
-EXPOSE 6080
-
-# ===============================
-# RUN COMMAND
-# ===============================
-CMD ["/bin/bash", "/root/startup.sh"]
+# Start X server, noVNC, dan XFCE via supervisord
+CMD ["/usr/bin/supervisord", "-n"]
